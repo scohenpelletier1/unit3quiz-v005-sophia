@@ -21,7 +21,7 @@ import {
   signOut, 
   onAuthStateChanged 
 } from 'firebase/auth'
-import { doc, setDoc, getDoc } from 'firebase/firestore'
+import { doc, setDoc, getDoc, collection, getCountFromServer } from 'firebase/firestore'
 import './App.css'
 
 ChartJS.register(
@@ -89,6 +89,24 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false)
   const [showThankYou, setShowThankYou] = useState(false)
   const [thankYouName, setThankYouName] = useState('')
+  const [isReturningUser, setIsReturningUser] = useState(false)
+  const [voterCount, setVoterCount] = useState(0)
+
+  // Fetch voter count
+  const fetchVoterCount = async () => {
+    try {
+      const votersCol = collection(db, 'voters')
+      const snapshot = await getCountFromServer(votersCol)
+      setVoterCount(snapshot.data().count)
+    } catch (err) {
+      console.error('Error fetching voter count:', err)
+    }
+  }
+
+  // Fetch voter count on mount
+  useEffect(() => {
+    fetchVoterCount()
+  }, [])
 
   // Listen for auth state changes
   useEffect(() => {
@@ -134,9 +152,13 @@ function App() {
       
       setUserName(authForm.name)
       setThankYouName(authForm.name)
+      setIsReturningUser(false)
       setShowAuthModal(false)
       setShowThankYou(true)
       setAuthForm({ name: '', email: '', password: '' })
+      
+      // Update voter count
+      fetchVoterCount()
       
       // Hide thank you message after 5 seconds
       setTimeout(() => setShowThankYou(false), 5000)
@@ -166,6 +188,7 @@ function App() {
       
       setUserName(fetchedName)
       setThankYouName(fetchedName)
+      setIsReturningUser(true)
       setShowAuthModal(false)
       setShowThankYou(true)
       setAuthForm({ name: '', email: '', password: '' })
@@ -565,9 +588,15 @@ function App() {
       {showThankYou && (
         <div className="thank-you-overlay">
           <div className="thank-you-modal">
-            <div className="thank-you-icon">✓</div>
-            <h2>Thank you for your support, {thankYouName}!</h2>
-            <p>Your voice matters. Together, we'll build a better future.</p>
+            <div className="thank-you-icon">{isReturningUser ? '👋' : '✓'}</div>
+            <h2>{isReturningUser 
+              ? `Welcome back, ${thankYouName}!` 
+              : `Thank you for your support, ${thankYouName}!`}
+            </h2>
+            <p>{isReturningUser 
+              ? "Great to see you again! Your continued support means everything." 
+              : "Your voice matters. Together, we'll build a better future."}
+            </p>
             <p className="thank-you-signature">— Sophia Cohen-Pelletier</p>
           </div>
         </div>
@@ -661,6 +690,14 @@ function App() {
             </button>
           )}
         </div>
+        
+        {/* Voter Counter */}
+        {voterCount > 0 && (
+          <div className="voter-counter">
+            <span className="voter-count">{voterCount.toLocaleString()}</span>
+            <span className="voter-label">{voterCount === 1 ? 'supporter' : 'supporters'} registered</span>
+          </div>
+        )}
       </header>
 
       <div className="controls">

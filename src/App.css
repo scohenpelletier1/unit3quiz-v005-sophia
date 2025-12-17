@@ -168,6 +168,41 @@ body {
   color: #ef4444;
 }
 
+/* Voter Counter */
+.voter-counter {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  padding: 0.6rem 1.25rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 50px;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
+}
+
+.voter-count {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #10b981;
+  font-family: 'Playfair Display', serif;
+  line-height: 1;
+}
+
+.voter-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
 /* Auth Modal Overlay */
 .auth-overlay {
   position: fixed;
