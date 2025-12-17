@@ -14,6 +14,14 @@ import {
   ArcElement
 } from 'chart.js'
 import { Line, Bar, Doughnut } from 'react-chartjs-2'
+import { auth, db } from './firebase'
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged 
+} from 'firebase/auth'
+import { doc, setDoc, getDoc, collection, getCountFromServer } from 'firebase/firestore'
 import './App.css'
 
 ChartJS.register(
@@ -70,6 +78,159 @@ function App() {
   const [chartType, setChartType] = useState('line')
   const [viewMode, setViewMode] = useState('warehouse') // 'category' or 'warehouse'
   const [warehouseSearch, setWarehouseSearch] = useState('')
+  
+  // Auth state
+  const [user, setUser] = useState(null)
+  const [userName, setUserName] = useState('')
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authMode, setAuthMode] = useState('register') // 'register' or 'login'
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' })
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [showThankYou, setShowThankYou] = useState(false)
+  const [thankYouName, setThankYouName] = useState('')
+  const [isReturningUser, setIsReturningUser] = useState(false)
+  const [voterCount, setVoterCount] = useState(0)
+
+  // Fetch voter count
+  const fetchVoterCount = async () => {
+    try {
+      const votersCol = collection(db, 'voters')
+      const snapshot = await getCountFromServer(votersCol)
+      setVoterCount(snapshot.data().count)
+    } catch (err) {
+      console.error('Error fetching voter count:', err)
+    }
+  }
+
+  // Fetch voter count on mount
+  useEffect(() => {
+    fetchVoterCount()
+  }, [])
+
+  // Listen for auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser)
+      if (currentUser) {
+        // Fetch user's name from Firestore
+        try {
+          const userDoc = await getDoc(doc(db, 'voters', currentUser.uid))
+          if (userDoc.exists()) {
+            setUserName(userDoc.data().name || '')
+          }
+        } catch (err) {
+          console.error('Error fetching user data:', err)
+        }
+      } else {
+        setUserName('')
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
+  // Handle registration
+  const handleRegister = async (e) => {
+    e.preventDefault()
+    setAuthError('')
+    setAuthLoading(true)
+    
+    try {
+      const userCredential = await createUserWithEmailAndPassword(
+        auth, 
+        authForm.email, 
+        authForm.password
+      )
+      
+      // Store user data in Firestore
+      await setDoc(doc(db, 'voters', userCredential.user.uid), {
+        name: authForm.name,
+        email: authForm.email,
+        registeredAt: new Date().toISOString(),
+        supportedCandidate: 'Sophia Cohen-Pelletier'
+      })
+      
+      setUserName(authForm.name)
+      setThankYouName(authForm.name)
+      setIsReturningUser(false)
+      setShowAuthModal(false)
+      setShowThankYou(true)
+      setAuthForm({ name: '', email: '', password: '' })
+      
+      // Update voter count
+      fetchVoterCount()
+      
+      // Hide thank you message after 5 seconds
+      setTimeout(() => setShowThankYou(false), 5000)
+    } catch (err) {
+      setAuthError(getAuthErrorMessage(err.code))
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  // Handle login
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    setAuthError('')
+    setAuthLoading(true)
+    
+    try {
+      const userCredential = await signInWithEmailAndPassword(
+        auth, 
+        authForm.email, 
+        authForm.password
+      )
+      
+      // Fetch user's name from Firestore
+      const userDoc = await getDoc(doc(db, 'voters', userCredential.user.uid))
+      const fetchedName = userDoc.exists() ? userDoc.data().name : 'Supporter'
+      
+      setUserName(fetchedName)
+      setThankYouName(fetchedName)
+      setIsReturningUser(true)
+      setShowAuthModal(false)
+      setShowThankYou(true)
+      setAuthForm({ name: '', email: '', password: '' })
+      
+      // Hide thank you message after 5 seconds
+      setTimeout(() => setShowThankYou(false), 5000)
+    } catch (err) {
+      setAuthError(getAuthErrorMessage(err.code))
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+      setUserName('')
+    } catch (err) {
+      console.error('Error signing out:', err)
+    }
+  }
+
+  // Get friendly error messages
+  const getAuthErrorMessage = (code) => {
+    switch (code) {
+      case 'auth/email-already-in-use':
+        return 'This email is already registered. Try logging in instead.'
+      case 'auth/weak-password':
+        return 'Password should be at least 6 characters.'
+      case 'auth/invalid-email':
+        return 'Please enter a valid email address.'
+      case 'auth/user-not-found':
+        return 'No account found with this email.'
+      case 'auth/wrong-password':
+        return 'Incorrect password. Please try again.'
+      case 'auth/invalid-credential':
+        return 'Invalid email or password. Please try again.'
+      default:
+        return 'An error occurred. Please try again.'
+    }
+  }
 
   // Load and parse CSV
   useEffect(() => {
@@ -423,9 +584,120 @@ function App() {
 
   return (
     <div className="app">
+      {/* Thank You Modal */}
+      {showThankYou && (
+        <div className="thank-you-overlay">
+          <div className="thank-you-modal">
+            <div className="thank-you-icon">{isReturningUser ? '👋' : '✓'}</div>
+            <h2>{isReturningUser 
+              ? `Welcome back, ${thankYouName}!` 
+              : `Thank you for your support, ${thankYouName}!`}
+            </h2>
+            <p>{isReturningUser 
+              ? "Great to see you again! Your continued support means everything." 
+              : "Your voice matters. Together, we'll build a better future."}
+            </p>
+            <p className="thank-you-signature">— Sophia Cohen-Pelletier</p>
+          </div>
+        </div>
+      )}
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="auth-overlay" onClick={() => setShowAuthModal(false)}>
+          <div className="auth-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="auth-close" onClick={() => setShowAuthModal(false)}>×</button>
+            
+            <div className="auth-header">
+              <h2>{authMode === 'register' ? 'Register to Vote' : 'Welcome Back'}</h2>
+              <p>{authMode === 'register' 
+                ? 'Join our community of supporters' 
+                : 'Sign in to your account'}</p>
+            </div>
+
+            <form onSubmit={authMode === 'register' ? handleRegister : handleLogin}>
+              {authMode === 'register' && (
+                <div className="auth-field">
+                  <label>Your Name</label>
+                  <input
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={authForm.name}
+                    onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
+              
+              <div className="auth-field">
+                <label>Email</label>
+                <input
+                  type="email"
+                  placeholder="Enter your email"
+                  value={authForm.email}
+                  onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div className="auth-field">
+                <label>Password</label>
+                <input
+                  type="password"
+                  placeholder={authMode === 'register' ? 'Create a password' : 'Enter your password'}
+                  value={authForm.password}
+                  onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                  required
+                />
+              </div>
+
+              {authError && <div className="auth-error">{authError}</div>}
+
+              <button type="submit" className="auth-submit" disabled={authLoading}>
+                {authLoading ? 'Please wait...' : (authMode === 'register' ? 'Register My Support' : 'Sign In')}
+              </button>
+            </form>
+
+            <div className="auth-switch">
+              {authMode === 'register' ? (
+                <p>Already registered? <button onClick={() => { setAuthMode('login'); setAuthError(''); }}>Sign in</button></p>
+              ) : (
+                <p>New supporter? <button onClick={() => { setAuthMode('register'); setAuthError(''); }}>Register now</button></p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="header">
         <h1>Warehouse & Retail Sales</h1>
         <p className="subtitle">Sales Analytics Dashboard</p>
+        
+        {/* Auth Button */}
+        <div className="auth-button-container">
+          {user ? (
+            <div className="user-info">
+              <span className="user-greeting">Welcome, {userName || 'Supporter'}!</span>
+              <button className="auth-logout-btn" onClick={handleLogout}>Sign Out</button>
+            </div>
+          ) : (
+            <button 
+              className="register-vote-btn"
+              onClick={() => { setShowAuthModal(true); setAuthMode('register'); setAuthError(''); }}
+            >
+              <span className="vote-icon">🗳️</span>
+              Register to Vote
+            </button>
+          )}
+        </div>
+        
+        {/* Voter Counter */}
+        {voterCount > 0 && (
+          <div className="voter-counter">
+            <span className="voter-count">{voterCount.toLocaleString()}</span>
+            <span className="voter-label">{voterCount === 1 ? 'supporter' : 'supporters'} registered</span>
+          </div>
+        )}
       </header>
 
       <div className="controls">
@@ -546,7 +818,7 @@ function App() {
                 >
                   <span className="type-indicator"></span>
                   <span className="btn-text">{wh.length > 30 ? wh.substring(0, 27) + '...' : wh}</span>
-                </button>
+        </button>
               )
             })
           )}
@@ -697,7 +969,7 @@ function App() {
           <div className="statement-cta">
             <p className="cta-text">
               When you vote for me, you vote for <em>transparency</em>, <em>accountability</em>, and 
-              <em>policies grounded in real data</em>—not political rhetoric.
+              <em> policies grounded in real data </em>— not political rhetoric.
             </p>
             <div className="signature">
               <span className="signature-line"></span>
