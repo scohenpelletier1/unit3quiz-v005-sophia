@@ -31,23 +31,45 @@ ChartJS.register(
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-const COLORS = {
-  WINE: { main: '#8B0A50', light: 'rgba(139, 10, 80, 0.3)', gradient: ['#8B0A50', '#C71585'] },
-  BEER: { main: '#DAA520', light: 'rgba(218, 165, 32, 0.3)', gradient: ['#DAA520', '#FFD700'] },
-  LIQUOR: { main: '#1E90FF', light: 'rgba(30, 144, 255, 0.3)', gradient: ['#1E90FF', '#00CED1'] },
-  KEGS: { main: '#2E8B57', light: 'rgba(46, 139, 87, 0.3)', gradient: ['#2E8B57', '#3CB371'] },
-  STR_SUPPLIES: { main: '#9370DB', light: 'rgba(147, 112, 219, 0.3)', gradient: ['#9370DB', '#BA55D3'] },
-  REF: { main: '#FF6347', light: 'rgba(255, 99, 71, 0.3)', gradient: ['#FF6347', '#FF7F50'] },
-  default: { main: '#708090', light: 'rgba(112, 128, 144, 0.3)', gradient: ['#708090', '#778899'] }
+const TYPE_COLORS = {
+  WINE: { main: '#8B0A50', light: 'rgba(139, 10, 80, 0.3)' },
+  BEER: { main: '#DAA520', light: 'rgba(218, 165, 32, 0.3)' },
+  LIQUOR: { main: '#1E90FF', light: 'rgba(30, 144, 255, 0.3)' },
+  KEGS: { main: '#2E8B57', light: 'rgba(46, 139, 87, 0.3)' },
+  STR_SUPPLIES: { main: '#9370DB', light: 'rgba(147, 112, 219, 0.3)' },
+  REF: { main: '#FF6347', light: 'rgba(255, 99, 71, 0.3)' },
+  default: { main: '#708090', light: 'rgba(112, 128, 144, 0.3)' }
 }
+
+// Generate distinct colors for warehouses
+const WAREHOUSE_PALETTE = [
+  { main: '#FF6B6B', light: 'rgba(255, 107, 107, 0.3)' },
+  { main: '#4ECDC4', light: 'rgba(78, 205, 196, 0.3)' },
+  { main: '#45B7D1', light: 'rgba(69, 183, 209, 0.3)' },
+  { main: '#96CEB4', light: 'rgba(150, 206, 180, 0.3)' },
+  { main: '#FFEAA7', light: 'rgba(255, 234, 167, 0.3)' },
+  { main: '#DDA0DD', light: 'rgba(221, 160, 221, 0.3)' },
+  { main: '#98D8C8', light: 'rgba(152, 216, 200, 0.3)' },
+  { main: '#F7DC6F', light: 'rgba(247, 220, 111, 0.3)' },
+  { main: '#BB8FCE', light: 'rgba(187, 143, 206, 0.3)' },
+  { main: '#85C1E9', light: 'rgba(133, 193, 233, 0.3)' },
+  { main: '#F8B500', light: 'rgba(248, 181, 0, 0.3)' },
+  { main: '#00CED1', light: 'rgba(0, 206, 209, 0.3)' },
+  { main: '#FF7F50', light: 'rgba(255, 127, 80, 0.3)' },
+  { main: '#9FE2BF', light: 'rgba(159, 226, 191, 0.3)' },
+  { main: '#DE3163', light: 'rgba(222, 49, 99, 0.3)' },
+]
 
 function App() {
   const [rawData, setRawData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedTypes, setSelectedTypes] = useState([])
+  const [selectedWarehouses, setSelectedWarehouses] = useState([])
   const [selectedYear, setSelectedYear] = useState('all')
   const [chartType, setChartType] = useState('line')
+  const [viewMode, setViewMode] = useState('warehouse') // 'category' or 'warehouse'
+  const [warehouseSearch, setWarehouseSearch] = useState('')
 
   // Load and parse CSV
   useEffect(() => {
@@ -66,29 +88,55 @@ function App() {
     })
   }, [])
 
-  // Get unique item types and years
-  const { itemTypes, years } = useMemo(() => {
+  // Get unique item types, warehouses, and years
+  const { itemTypes, warehouses, years } = useMemo(() => {
     const types = new Set()
+    const suppliers = new Map() // supplier -> total sales for sorting
     const yrs = new Set()
+    
     rawData.forEach(row => {
       if (row['ITEM TYPE']) types.add(row['ITEM TYPE'])
       if (row['YEAR']) yrs.add(row['YEAR'])
+      if (row['SUPPLIER']) {
+        const supplier = row['SUPPLIER']
+        const sales = (parseFloat(row['RETAIL SALES']) || 0) + (parseFloat(row['WAREHOUSE SALES']) || 0)
+        suppliers.set(supplier, (suppliers.get(supplier) || 0) + sales)
+      }
     })
+    
+    // Sort warehouses by total sales (descending)
+    const sortedWarehouses = Array.from(suppliers.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+    
     return {
       itemTypes: Array.from(types).sort(),
+      warehouses: sortedWarehouses,
       years: Array.from(yrs).sort()
     }
   }, [rawData])
 
-  // Initialize selected types when data loads
+  // Initialize selections when data loads
   useEffect(() => {
     if (itemTypes.length > 0 && selectedTypes.length === 0) {
       setSelectedTypes(itemTypes.slice(0, 3))
     }
   }, [itemTypes])
 
-  // Aggregate data by year, month, and item type
-  const aggregatedData = useMemo(() => {
+  useEffect(() => {
+    if (warehouses.length > 0 && selectedWarehouses.length === 0) {
+      setSelectedWarehouses(warehouses.slice(0, 5))
+    }
+  }, [warehouses])
+
+  // Get color for warehouse by index
+  const getWarehouseColor = (warehouse) => {
+    const idx = warehouses.indexOf(warehouse) % WAREHOUSE_PALETTE.length
+    return WAREHOUSE_PALETTE[idx]
+  }
+
+  // Aggregate data by year, month, and category/warehouse
+  const aggregatedByCategory = useMemo(() => {
     const data = {}
     
     rawData.forEach(row => {
@@ -114,64 +162,142 @@ function App() {
     return Object.values(data)
   }, [rawData])
 
+  const aggregatedByWarehouse = useMemo(() => {
+    const data = {}
+    
+    rawData.forEach(row => {
+      const year = row['YEAR']
+      const month = parseInt(row['MONTH']) || 0
+      const supplier = row['SUPPLIER']
+      const retailSales = parseFloat(row['RETAIL SALES']) || 0
+      const warehouseSales = parseFloat(row['WAREHOUSE SALES']) || 0
+      const retailTransfers = parseFloat(row['RETAIL TRANSFERS']) || 0
+      
+      if (!supplier || month < 1 || month > 12) return
+      
+      const key = `${year}-${month}-${supplier}`
+      if (!data[key]) {
+        data[key] = { year, month, warehouse: supplier, retailSales: 0, warehouseSales: 0, retailTransfers: 0, totalSales: 0 }
+      }
+      data[key].retailSales += retailSales
+      data[key].warehouseSales += warehouseSales
+      data[key].retailTransfers += retailTransfers
+      data[key].totalSales += retailSales + warehouseSales
+    })
+    
+    return Object.values(data)
+  }, [rawData])
+
   // Filter and prepare chart data
   const chartData = useMemo(() => {
-    const filteredData = aggregatedData.filter(row => {
-      const typeMatch = selectedTypes.includes(row.type)
-      const yearMatch = selectedYear === 'all' || row.year === selectedYear
-      return typeMatch && yearMatch
-    })
+    if (viewMode === 'category') {
+      const filteredData = aggregatedByCategory.filter(row => {
+        const typeMatch = selectedTypes.includes(row.type)
+        const yearMatch = selectedYear === 'all' || row.year === selectedYear
+        return typeMatch && yearMatch
+      })
 
-    // Group by month for each type
-    const monthlyByType = {}
-    selectedTypes.forEach(type => {
-      monthlyByType[type] = Array(12).fill(0)
-    })
+      const monthlyByType = {}
+      selectedTypes.forEach(type => {
+        monthlyByType[type] = Array(12).fill(0)
+      })
 
-    filteredData.forEach(row => {
-      if (monthlyByType[row.type]) {
-        monthlyByType[row.type][row.month - 1] += row.totalSales
-      }
-    })
+      filteredData.forEach(row => {
+        if (monthlyByType[row.type]) {
+          monthlyByType[row.type][row.month - 1] += row.totalSales
+        }
+      })
 
-    const datasets = selectedTypes.map(type => {
-      const color = COLORS[type] || COLORS.default
-      return {
-        label: type,
-        data: monthlyByType[type],
-        borderColor: color.main,
-        backgroundColor: chartType === 'line' ? color.light : color.main,
-        fill: chartType === 'line',
-        tension: 0.4,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-      }
-    })
+      const datasets = selectedTypes.map(type => {
+        const color = TYPE_COLORS[type] || TYPE_COLORS.default
+        return {
+          label: type,
+          data: monthlyByType[type],
+          borderColor: color.main,
+          backgroundColor: chartType === 'line' ? color.light : color.main,
+          fill: chartType === 'line',
+          tension: 0.4,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+        }
+      })
 
-    return {
-      labels: MONTHS,
-      datasets
+      return { labels: MONTHS, datasets }
+    } else {
+      // Warehouse view
+      const filteredData = aggregatedByWarehouse.filter(row => {
+        const warehouseMatch = selectedWarehouses.includes(row.warehouse)
+        const yearMatch = selectedYear === 'all' || row.year === selectedYear
+        return warehouseMatch && yearMatch
+      })
+
+      const monthlyByWarehouse = {}
+      selectedWarehouses.forEach(wh => {
+        monthlyByWarehouse[wh] = Array(12).fill(0)
+      })
+
+      filteredData.forEach(row => {
+        if (monthlyByWarehouse[row.warehouse]) {
+          monthlyByWarehouse[row.warehouse][row.month - 1] += row.totalSales
+        }
+      })
+
+      const datasets = selectedWarehouses.map(wh => {
+        const color = getWarehouseColor(wh)
+        // Shorten warehouse names for legend
+        const shortName = wh.length > 25 ? wh.substring(0, 22) + '...' : wh
+        return {
+          label: shortName,
+          data: monthlyByWarehouse[wh],
+          borderColor: color.main,
+          backgroundColor: chartType === 'line' ? color.light : color.main,
+          fill: chartType === 'line',
+          tension: 0.4,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+        }
+      })
+
+      return { labels: MONTHS, datasets }
     }
-  }, [aggregatedData, selectedTypes, selectedYear, chartType])
+  }, [viewMode, aggregatedByCategory, aggregatedByWarehouse, selectedTypes, selectedWarehouses, selectedYear, chartType, warehouses])
 
   // Summary stats for doughnut chart
   const summaryData = useMemo(() => {
-    const totals = {}
-    aggregatedData.forEach(row => {
-      const yearMatch = selectedYear === 'all' || row.year === selectedYear
-      if (!yearMatch) return
-      if (!totals[row.type]) totals[row.type] = 0
-      totals[row.type] += row.totalSales
-    })
+    if (viewMode === 'category') {
+      const totals = {}
+      aggregatedByCategory.forEach(row => {
+        const yearMatch = selectedYear === 'all' || row.year === selectedYear
+        if (!yearMatch) return
+        if (!totals[row.type]) totals[row.type] = 0
+        totals[row.type] += row.totalSales
+      })
 
-    const labels = Object.keys(totals).sort((a, b) => totals[b] - totals[a])
-    const data = labels.map(l => totals[l])
-    const colors = labels.map(l => (COLORS[l] || COLORS.default).main)
+      const labels = Object.keys(totals).sort((a, b) => totals[b] - totals[a])
+      const data = labels.map(l => totals[l])
+      const colors = labels.map(l => (TYPE_COLORS[l] || TYPE_COLORS.default).main)
 
-    return { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] }
-  }, [aggregatedData, selectedYear])
+      return { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] }
+    } else {
+      const totals = {}
+      aggregatedByWarehouse.forEach(row => {
+        const yearMatch = selectedYear === 'all' || row.year === selectedYear
+        if (!yearMatch) return
+        if (!totals[row.warehouse]) totals[row.warehouse] = 0
+        totals[row.warehouse] += row.totalSales
+      })
 
-  // Toggle item type selection
+      // Top 10 warehouses for doughnut
+      const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 10)
+      const labels = sorted.map(([name]) => name.length > 20 ? name.substring(0, 17) + '...' : name)
+      const data = sorted.map(([, val]) => val)
+      const colors = sorted.map(([name]) => getWarehouseColor(name).main)
+
+      return { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] }
+    }
+  }, [viewMode, aggregatedByCategory, aggregatedByWarehouse, selectedYear, warehouses])
+
+  // Toggle selections
   const toggleType = (type) => {
     setSelectedTypes(prev => 
       prev.includes(type) 
@@ -179,6 +305,22 @@ function App() {
         : [...prev, type]
     )
   }
+
+  const toggleWarehouse = (warehouse) => {
+    setSelectedWarehouses(prev => 
+      prev.includes(warehouse) 
+        ? prev.filter(w => w !== warehouse)
+        : [...prev, warehouse]
+    )
+  }
+
+  // Filtered warehouses for display
+  const filteredWarehouses = useMemo(() => {
+    if (!warehouseSearch) return warehouses.slice(0, 20)
+    return warehouses.filter(w => 
+      w.toLowerCase().includes(warehouseSearch.toLowerCase())
+    ).slice(0, 20)
+  }, [warehouses, warehouseSearch])
 
   const chartOptions = {
     responsive: true,
@@ -192,17 +334,20 @@ function App() {
         position: 'top',
         labels: {
           color: '#e0e0e0',
-          font: { family: "'JetBrains Mono', monospace", size: 12 },
-          padding: 20,
+          font: { family: "'JetBrains Mono', monospace", size: 11 },
+          padding: 15,
           usePointStyle: true,
+          boxWidth: 8,
         }
       },
       title: {
         display: true,
-        text: selectedYear === 'all' ? 'Monthly Sales (All Years Combined)' : `Monthly Sales - ${selectedYear}`,
+        text: viewMode === 'warehouse' 
+          ? (selectedYear === 'all' ? 'Monthly Sales by Warehouse (All Years)' : `Monthly Sales by Warehouse - ${selectedYear}`)
+          : (selectedYear === 'all' ? 'Monthly Sales by Category (All Years)' : `Monthly Sales by Category - ${selectedYear}`),
         color: '#fff',
-        font: { family: "'Playfair Display', serif", size: 20, weight: '600' },
-        padding: { bottom: 30 }
+        font: { family: "'Playfair Display', serif", size: 18, weight: '600' },
+        padding: { bottom: 20 }
       },
       tooltip: {
         backgroundColor: 'rgba(0, 0, 0, 0.85)',
@@ -239,17 +384,17 @@ function App() {
         position: 'right',
         labels: {
           color: '#e0e0e0',
-          font: { family: "'JetBrains Mono', monospace", size: 11 },
-          padding: 15,
+          font: { family: "'JetBrains Mono', monospace", size: 10 },
+          padding: 10,
           usePointStyle: true,
         }
       },
       title: {
         display: true,
-        text: 'Sales Distribution by Category',
+        text: viewMode === 'warehouse' ? 'Top 10 Warehouses' : 'Sales by Category',
         color: '#fff',
-        font: { family: "'Playfair Display', serif", size: 18, weight: '600' },
-        padding: { bottom: 20 }
+        font: { family: "'Playfair Display', serif", size: 16, weight: '600' },
+        padding: { bottom: 15 }
       }
     }
   }
@@ -273,6 +418,9 @@ function App() {
     )
   }
 
+  const currentSelection = viewMode === 'warehouse' ? selectedWarehouses : selectedTypes
+  const currentAggregated = viewMode === 'warehouse' ? aggregatedByWarehouse : aggregatedByCategory
+
   return (
     <div className="app">
       <header className="header">
@@ -281,23 +429,27 @@ function App() {
       </header>
 
       <div className="controls">
-        <div className="control-section">
-          <h3>Product Category</h3>
-          <div className="type-filters">
-            {itemTypes.map(type => (
-              <button
-                key={type}
-                className={`type-btn ${selectedTypes.includes(type) ? 'active' : ''}`}
-                onClick={() => toggleType(type)}
-                style={{
-                  '--btn-color': (COLORS[type] || COLORS.default).main,
-                  '--btn-light': (COLORS[type] || COLORS.default).light
-                }}
-              >
-                <span className="type-indicator"></span>
-                {type}
-              </button>
-            ))}
+        <div className="control-section view-mode-section">
+          <h3>View By</h3>
+          <div className="view-mode-toggle">
+            <button
+              className={`view-btn ${viewMode === 'warehouse' ? 'active' : ''}`}
+              onClick={() => setViewMode('warehouse')}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/>
+              </svg>
+              By Warehouse
+            </button>
+            <button
+              className={`view-btn ${viewMode === 'category' ? 'active' : ''}`}
+              onClick={() => setViewMode('category')}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+              </svg>
+              By Category
+            </button>
           </div>
         </div>
 
@@ -347,6 +499,67 @@ function App() {
         </div>
       </div>
 
+      {/* Selection Panel */}
+      <div className="selection-panel">
+        <h3>{viewMode === 'warehouse' ? `Select Warehouses (${warehouses.length} total)` : 'Select Categories'}</h3>
+        
+        {viewMode === 'warehouse' && (
+          <div className="search-box">
+            <input
+              type="text"
+              placeholder="Search warehouses..."
+              value={warehouseSearch}
+              onChange={(e) => setWarehouseSearch(e.target.value)}
+            />
+          </div>
+        )}
+        
+        <div className="selection-grid">
+          {viewMode === 'category' ? (
+            itemTypes.map(type => (
+              <button
+                key={type}
+                className={`type-btn ${selectedTypes.includes(type) ? 'active' : ''}`}
+                onClick={() => toggleType(type)}
+                style={{
+                  '--btn-color': (TYPE_COLORS[type] || TYPE_COLORS.default).main,
+                  '--btn-light': (TYPE_COLORS[type] || TYPE_COLORS.default).light
+                }}
+              >
+                <span className="type-indicator"></span>
+                {type}
+              </button>
+            ))
+          ) : (
+            filteredWarehouses.map(wh => {
+              const color = getWarehouseColor(wh)
+              return (
+                <button
+                  key={wh}
+                  className={`type-btn warehouse-btn ${selectedWarehouses.includes(wh) ? 'active' : ''}`}
+                  onClick={() => toggleWarehouse(wh)}
+                  style={{
+                    '--btn-color': color.main,
+                    '--btn-light': color.light
+                  }}
+                  title={wh}
+                >
+                  <span className="type-indicator"></span>
+                  <span className="btn-text">{wh.length > 30 ? wh.substring(0, 27) + '...' : wh}</span>
+                </button>
+              )
+            })
+          )}
+        </div>
+        
+        {viewMode === 'warehouse' && (
+          <p className="selection-hint">
+            Showing top {filteredWarehouses.length} of {warehouses.length} warehouses
+            {warehouseSearch && ` matching "${warehouseSearch}"`}
+          </p>
+        )}
+      </div>
+
       <div className="charts-container">
         <div className="main-chart">
           {chartType === 'line' ? (
@@ -361,40 +574,143 @@ function App() {
       </div>
 
       <div className="stats-grid">
-        {selectedTypes.map(type => {
-          const typeData = aggregatedData.filter(r => 
-            r.type === type && (selectedYear === 'all' || r.year === selectedYear)
-          )
-          const total = typeData.reduce((sum, r) => sum + r.totalSales, 0)
-          const retail = typeData.reduce((sum, r) => sum + r.retailSales, 0)
-          const warehouse = typeData.reduce((sum, r) => sum + r.warehouseSales, 0)
-          const color = COLORS[type] || COLORS.default
-          
-          return (
-            <div key={type} className="stat-card" style={{ '--card-color': color.main }}>
-              <div className="stat-header">
-                <span className="stat-dot" style={{ background: color.main }}></span>
-                <h4>{type}</h4>
-              </div>
-              <div className="stat-value">{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-              <div className="stat-label">Total Sales</div>
-              <div className="stat-breakdown">
-                <div className="stat-row">
-                  <span>Retail</span>
-                  <span>{retail.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        {viewMode === 'category' ? (
+          selectedTypes.map(type => {
+            const typeData = aggregatedByCategory.filter(r => 
+              r.type === type && (selectedYear === 'all' || r.year === selectedYear)
+            )
+            const total = typeData.reduce((sum, r) => sum + r.totalSales, 0)
+            const retail = typeData.reduce((sum, r) => sum + r.retailSales, 0)
+            const warehouse = typeData.reduce((sum, r) => sum + r.warehouseSales, 0)
+            const color = TYPE_COLORS[type] || TYPE_COLORS.default
+            
+            return (
+              <div key={type} className="stat-card" style={{ '--card-color': color.main }}>
+                <div className="stat-header">
+                  <span className="stat-dot" style={{ background: color.main }}></span>
+                  <h4>{type}</h4>
                 </div>
-                <div className="stat-row">
-                  <span>Warehouse</span>
-                  <span>{warehouse.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <div className="stat-value">{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="stat-label">Total Sales</div>
+                <div className="stat-breakdown">
+                  <div className="stat-row">
+                    <span>Retail</span>
+                    <span>{retail.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span>Warehouse</span>
+                    <span>{warehouse.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })
+        ) : (
+          selectedWarehouses.slice(0, 6).map(wh => {
+            const whData = aggregatedByWarehouse.filter(r => 
+              r.warehouse === wh && (selectedYear === 'all' || r.year === selectedYear)
+            )
+            const total = whData.reduce((sum, r) => sum + r.totalSales, 0)
+            const retail = whData.reduce((sum, r) => sum + r.retailSales, 0)
+            const warehouse = whData.reduce((sum, r) => sum + r.warehouseSales, 0)
+            const color = getWarehouseColor(wh)
+            
+            return (
+              <div key={wh} className="stat-card" style={{ '--card-color': color.main }}>
+                <div className="stat-header">
+                  <span className="stat-dot" style={{ background: color.main }}></span>
+                  <h4 title={wh}>{wh.length > 20 ? wh.substring(0, 17) + '...' : wh}</h4>
+                </div>
+                <div className="stat-value">{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="stat-label">Total Sales</div>
+                <div className="stat-breakdown">
+                  <div className="stat-row">
+                    <span>Retail</span>
+                    <span>{retail.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span>Warehouse</span>
+                    <span>{warehouse.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })
+        )}
       </div>
 
+      <section className="statement-of-intent">
+        <div className="statement-header">
+          <div className="statement-badge">Statement of Intent</div>
+          <h2>Transparency in Commerce, Accountability in Governance</h2>
+        </div>
+        
+        <div className="statement-content">
+          <div className="statement-block">
+            <h3>Understanding the Data</h3>
+            <p>
+              This dashboard presents comprehensive warehouse and retail sales data spanning 2017-2020, 
+              encompassing over <strong>{rawData.length.toLocaleString()}</strong> individual transactions across 
+              <strong> {warehouses.length}</strong> distribution partners and multiple product categories. 
+              The data reveals seasonal purchasing patterns, distribution channel efficiencies, and the economic 
+              footprint of regulated beverage sales in our community.
+            </p>
+          </div>
+
+          <div className="statement-block">
+            <h3>My Position</h3>
+            <p>
+              As your representative, I believe in <strong>data-driven policy making</strong>. This sales data 
+              demonstrates the significant economic contribution of the regulated beverage industry to our 
+              local economy—creating jobs, generating tax revenue, and supporting small businesses throughout 
+              our supply chain.
+            </p>
+            <p>
+              I stand for <strong>balanced regulation</strong> that protects public health while fostering 
+              economic growth. The transparency shown here reflects my commitment to open governance—you 
+              deserve to see the same data that informs policy decisions.
+            </p>
+          </div>
+
+          <div className="statement-block">
+            <h3>My Commitment to You</h3>
+            <ul className="commitment-list">
+              <li>
+                <span className="commitment-icon">📊</span>
+                <span>Support evidence-based policies that reflect actual market conditions</span>
+              </li>
+              <li>
+                <span className="commitment-icon">💼</span>
+                <span>Protect local businesses and the jobs they create in our community</span>
+              </li>
+              <li>
+                <span className="commitment-icon">🛡️</span>
+                <span>Maintain responsible oversight while reducing unnecessary bureaucratic burden</span>
+              </li>
+              <li>
+                <span className="commitment-icon">🤝</span>
+                <span>Ensure fair competition and market access for all stakeholders</span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="statement-cta">
+            <p className="cta-text">
+              When you vote for me, you vote for <em>transparency</em>, <em>accountability</em>, and 
+              <em>policies grounded in real data</em>—not political rhetoric.
+            </p>
+            <div className="signature">
+              <span className="signature-line"></span>
+              <span className="signature-text">~Your Candidate for Progress~</span>
+              <span className="signature-text">Sophia Cohen-Pelletier</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <footer className="footer">
-        <p>Data: Warehouse & Retail Sales Dataset • {rawData.length.toLocaleString()} records</p>
+        <p>Data: Warehouse & Retail Sales Dataset • {rawData.length.toLocaleString()} records • {warehouses.length} warehouses</p>
+        <p className="footer-disclaimer">Paid for by Citizens for Transparent Governance</p>
       </footer>
     </div>
   )
