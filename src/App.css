@@ -985,8 +985,28 @@ body {
   color: var(--text-secondary);
 }
 
+.footer a {
+  color: #6366f1;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer a:hover {
+  color: #818cf8;
+  text-decoration: underline;
+}
+
+.data-source-link {
+  font-weight: 500;
+}
+
+.footer-source {
+  margin-top: 0.25rem;
+  font-size: 0.75rem !important;
+}
+
 .footer-disclaimer {
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
   font-size: 0.7rem !important;
   color: #64748b !important;
   font-style: italic;

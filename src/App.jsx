@@ -981,10 +981,34 @@ function App() {
       </section>
 
       <footer className="footer">
-        <p>Data: Warehouse & Retail Sales Dataset • {rawData.length.toLocaleString()} records • {warehouses.length} warehouses</p>
+        <p>
+          Data: <a 
+            href="https://catalog.data.gov/dataset/warehouse-and-retail-sales" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="data-source-link"
+          >
+            Warehouse and Retail Sales Dataset
+          </a> • Montgomery County, MD • {rawData.length.toLocaleString()} records • {warehouses.length} warehouses
+        </p>
+        <p className="footer-source">
+          Source: <a 
+            href="https://data.montgomerycountymd.gov/d/v76h-r7br" 
+            target="_blank" 
+            rel="noopener noreferrer"
+          >
+            data.montgomerycountymd.gov
+          </a> via <a 
+            href="https://catalog.data.gov/dataset/warehouse-and-retail-sales" 
+            target="_blank" 
+            rel="noopener noreferrer"
+          >
+            Data.gov
+          </a>
+        </p>
         <p className="footer-disclaimer">Paid for by Citizens for Transparent Governance</p>
       </footer>
-    </div>
+      </div>
   )
 }
 
